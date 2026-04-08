@@ -40,11 +40,13 @@ html, body, [class*="css"] {
 section[data-testid="stSidebar"] {
   background: linear-gradient(180deg, var(--blue-deep) 0%, #0D3461 60%, #0A2540 100%);
   border-right: 2px solid var(--blue-mid);
+  min-width: 220px;
+  max-width: 420px;
 }
 
 /* ── Hide Streamlit chrome ── */
 #MainMenu, footer, header { visibility: hidden; }
-.block-container { padding-top: 1rem !important; }
+.block-container { padding-top: 1rem !important; padding-bottom: 0.5rem !important; }
 
 /* ── Hero banner ── */
 .hero {
@@ -252,10 +254,55 @@ section[data-testid="stSidebar"] {
   margin: 2px;
 }
 
+/* ── Sidebar themes horizontal ── */
+.sidebar-themes {
+  display: flex; flex-wrap: wrap; gap: 0.4rem;
+}
+
+/* ── Sidebar & main: smooth resize transition ── */
+[data-testid="stAppViewContainer"] {
+  display: flex;
+  min-height: 100vh;
+}
+section[data-testid="stSidebar"] {
+  flex-shrink: 0;
+  transition: width 0.25s ease, transform 0.25s ease;
+}
+.main {
+  flex: 1;
+  min-width: 0;
+  overflow-x: hidden;
+  transition: margin-left 0.25s ease;
+}
+
+/* ── Mode card click overlay ── */
+.mode-card {
+  cursor: pointer !important;
+}
+
+/* ── Button no wrap (general) ── */
+.stButton > button {
+  white-space: nowrap !important;
+  min-width: fit-content !important;
+}
+
+/* ── Footer ── */
+.app-footer {
+  background: linear-gradient(90deg, rgba(10,37,64,0.04) 0%, rgba(21,101,192,0.07) 50%, rgba(10,37,64,0.04) 100%);
+  border-top: 1px solid var(--blue-sky);
+  border-radius: 10px;
+  padding: 0.35rem 1rem;
+  margin-top: 0.4rem;
+  text-align: center;
+  color: #7a90a8;
+  font-size: 0.75rem;
+}
+
 /* ── Scrollbar ── */
 .chat-wrapper::-webkit-scrollbar { width: 5px; }
 .chat-wrapper::-webkit-scrollbar-track { background: transparent; }
 .chat-wrapper::-webkit-scrollbar-thumb { background: var(--blue-sky); border-radius: 10px; }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -282,20 +329,6 @@ with st.sidebar:
     <hr class="sidebar-divider">
     """, unsafe_allow_html=True)
 
-    st.markdown('<div class="sidebar-section">Mode de génération</div>', unsafe_allow_html=True)
-    mode = st.radio(
-        label="",
-        options=["💬 Texte", "🖼️ Image", "📡 Signal"],
-        index=["💬 Texte", "🖼️ Image", "📡 Signal"].index(
-            "💬 Texte" if st.session_state.mode == "Texte"
-            else "🖼️ Image" if st.session_state.mode == "Image"
-            else "📡 Signal"
-        ),
-        label_visibility="collapsed"
-    )
-    st.session_state.mode = mode.split(" ")[1]
-
-    st.markdown('<hr class="sidebar-divider">', unsafe_allow_html=True)
     st.markdown('<div class="sidebar-section">Statistiques de session</div>', unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
@@ -313,15 +346,10 @@ with st.sidebar:
         </div>""", unsafe_allow_html=True)
 
     st.markdown('<hr class="sidebar-divider">', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-section">Paramètres</div>', unsafe_allow_html=True)
-    lang = st.selectbox("Langue de réponse", ["Français", "English", "Español", "العربية"], index=0)
-    creativity = st.slider("Créativité", 0, 100, 70, help="Niveau de créativité du modèle")
-
-    st.markdown('<hr class="sidebar-divider">', unsafe_allow_html=True)
     st.markdown('<div class="sidebar-section">Thèmes eau disponibles</div>', unsafe_allow_html=True)
     topics = ["Hydrologie", "Eau potable", "Irrigation", "Océanographie", "Traitement des eaux", "Signaux hydro"]
-    for t in topics:
-        st.markdown(f'<div class="chip">💧 {t}</div>', unsafe_allow_html=True)
+    topics_html = ''.join([f'<div class="chip">{t}</div>' for t in topics])
+    st.markdown(f'<div class="sidebar-themes">{topics_html}</div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🗑️ Effacer la conversation"):
@@ -349,17 +377,42 @@ mode_info = {
     "Image": ("🖼️", "Génération Image", "Visualisations, cartes, illustrations hydriques"),
     "Signal": ("📡", "Génération Signal", "Signaux, capteurs, données temporelles eau"),
 }
+
+st.markdown('<div id="mode-cards-wrapper"></div>', unsafe_allow_html=True)
+
 cols = st.columns(3)
-mode_keys = list(mode_info.keys())
 for i, (k, (icon, label, desc)) in enumerate(mode_info.items()):
     active = "active" if st.session_state.mode == k else ""
     with cols[i]:
         st.markdown(f"""
-        <div class="mode-card {active}">
+        <div class="mode-card {active}" data-mode="{k}" onclick="document.getElementById('mode_{k}').click()">
           <span class="mode-icon">{icon}</span>
           <div class="mode-label">{label}</div>
           <div class="mode-desc">{desc}</div>
-        </div>""", unsafe_allow_html=True)
+        </div><input type="hidden" id="mode_{k}" />""", unsafe_allow_html=True)
+
+# Charger les valeurs depuis query params
+if "mode" in st.query_params:
+    new_mode = st.query_params["mode"]
+    if new_mode in mode_info and new_mode != st.session_state.mode:
+        st.session_state.mode = new_mode
+
+# Ajouter JavaScript pour les clics
+st.markdown("""
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const modes = ['Texte', 'Image', 'Signal'];
+  modes.forEach(mode => {
+    const hidden = document.getElementById('mode_' + mode);
+    if (hidden) {
+      hidden.addEventListener('click', function() {
+        window.location.href = '?mode=' + mode;
+      });
+    }
+  });
+});
+</script>
+""", unsafe_allow_html=True)
 
 # ── Chat area ─────────────────────────────────────────────────────────────────
 chat_html = '<div class="chat-wrapper">'
@@ -377,33 +430,18 @@ for m in st.session_state.messages:
 chat_html += "</div>"
 st.markdown(chat_html, unsafe_allow_html=True)
 
-# ── Contextual options per mode ───────────────────────────────────────────────
-current_mode = st.session_state.mode
-
-if current_mode == "Image":
-    extra_cols = st.columns([2, 2, 1])
-    with extra_cols[0]:
-        img_style = st.selectbox("Style visuel", ["Réaliste", "Schématique", "Satellite", "Infographie", "Artistique"])
-    with extra_cols[1]:
-        img_res = st.selectbox("Résolution", ["512×512", "768×768", "1024×1024", "1024×512"])
-elif current_mode == "Signal":
-    extra_cols = st.columns([2, 2, 1])
-    with extra_cols[0]:
-        sig_type = st.selectbox("Type de signal", ["Débit fluvial", "Pluviométrie", "Niveau piézométrique", "Turbidité", "pH eau"])
-    with extra_cols[1]:
-        sig_period = st.selectbox("Période", ["Temps réel", "24h", "7 jours", "1 mois", "1 an"])
-
 # ── Input row ─────────────────────────────────────────────────────────────────
+current_mode = st.session_state.mode
 placeholders = {
     "Texte": "Ex : Quels sont les enjeux de la gestion de l'eau en Afrique subsaharienne ?",
     "Image": "Ex : Carte de distribution des ressources en eau souterraine au Sahel…",
     "Signal": "Ex : Générer un signal de débit du fleuve Niger sur 30 jours…",
 }
 
-inp_col, btn_col = st.columns([5, 1])
+inp_col, btn_col = st.columns([4, 1])
 with inp_col:
     user_input = st.text_input(
-        label="",
+        label="Votre question",
         placeholder=placeholders[current_mode],
         key="user_input",
         label_visibility="collapsed"
@@ -411,17 +449,7 @@ with inp_col:
 with btn_col:
     send_btn = st.button("Envoyer ➤", use_container_width=True)
 
-# Suggestion chips
-st.markdown("""
-<div style="margin-top:0.4rem; margin-bottom:0.6rem;">
-  <span style="font-size:0.78rem; color:#888; margin-right:6px;">Suggestions :</span>
-  <span class="chip">💧 Cycle de l'eau</span>
-  <span class="chip">📊 Qualité eau</span>
-  <span class="chip">🌊 Inondations</span>
-  <span class="chip">🔬 Traitement</span>
-  <span class="chip">🌍 Accès eau</span>
-</div>
-""", unsafe_allow_html=True)
+
 
 # ── Response logic ─────────────────────────────────────────────────────────────
 RESPONSES = {
@@ -462,7 +490,6 @@ if current_mode == "Signal" and len(st.session_state.messages) > 1:
     st.markdown("---")
     st.markdown("**📡 Aperçu Signal en direct**")
     bars_html = '<div style="display:flex;align-items:flex-end;height:80px;gap:3px;background:var(--blue-pale);padding:12px;border-radius:14px;border:1px solid var(--blue-sky);">'
-    import math, random
     for i in range(40):
         h = int(20 + 45 * abs(math.sin(i * 0.5)) + random.randint(-5, 5))
         delay = f"{(i * 0.05):.2f}s"
@@ -483,7 +510,7 @@ if current_mode == "Image" and len(st.session_state.messages) > 1:
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("""
-<div style="text-align:center;padding:1.5rem 0 0.5rem;color:#aaa;font-size:0.75rem;border-top:1px solid #e8f4fd;margin-top:1.5rem;">
+<div class="app-footer">
   💧 <strong style="color:#1565C0;">BLUE-Gen</strong> · Assistant Eau Intelligent · Powered by AI Multimodale
   &nbsp;|&nbsp; Langue : Français &nbsp;|&nbsp; v2.4.0
 </div>""", unsafe_allow_html=True)
