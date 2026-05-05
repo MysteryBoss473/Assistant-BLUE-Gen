@@ -116,34 +116,11 @@ section[data-testid="stSidebar"] {
   font-size: 7rem; opacity: 0.12; user-select: none;
 }
 
-/* ── Mode selector ── */
-.mode-selector {
-  background: var(--blue-pale);
-  border: 2px solid var(--blue-bright);
-  border-radius: 12px;
-  padding: 1rem;
-  margin-bottom: 1.6rem;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-.mode-selector-label {
-  font-family: 'Playfair Display', serif;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--blue-deep);
-  min-width: fit-content;
-}
-.mode-selector select {
-  flex: 1;
-  border: 2px solid var(--blue-sky) !important;
-  border-radius: 8px !important;
-  padding: 0.6rem 1rem !important;
-  font-family: 'DM Sans', sans-serif !important;
-  font-size: 0.95rem !important;
-  background: white !important;
-  color: var(--blue-deep) !important;
-  cursor: pointer !important;
+/* ── Mode selector : empêcher la saisie dans le selectbox ── */
+.stSelectbox div[data-baseweb="select"] input {
+    pointer-events: none !important;
+    caret-color: transparent !important;
+    user-select: none !important;
 }
 
 /* ── Chat container ── */
@@ -332,7 +309,7 @@ def get_image_pipeline():
     """Charge le pipeline Image/LoRA une seule fois et le met en cache."""
     try:
         logger.info("⏳ Initialisation du pipeline Image (première exécution)...")
-        
+
         # Vérifier d'abord s'il existe un modèle fusionné (priorité)
         merged_pipeline_dir = LORA_ADAPTER_DIR / "merged_pipeline"
         if merged_pipeline_dir.exists() and any(merged_pipeline_dir.iterdir()):
@@ -346,7 +323,7 @@ def get_image_pipeline():
             else:
                 logger.warning(f"⚠ Chargement modèle fusionné échoué: {load_res.get('error')}")
                 # Fallback sur l'adaptateur LoRA
-        
+
         # Fallback: charger l'adaptateur LoRA s'il existe
         pipeline = ImageLoRAPipeline()
         if LORA_ADAPTER_DIR.exists() and any(LORA_ADAPTER_DIR.iterdir()):
@@ -358,7 +335,7 @@ def get_image_pipeline():
                     logger.info("✓ Adaptateur LoRA fine-tuné chargé")
                 else:
                     logger.warning(f"⚠ Chargement adaptateur LoRA échoué: {load_res.get('error')}")
-        
+
         logger.info("✓ Pipeline Image chargé en cache")
         return pipeline, None
     except Exception as e:
@@ -373,7 +350,7 @@ def get_signal_pipeline():
     try:
         logger.info("⏳ Initialisation du pipeline Signal/Forecast (première exécution)...")
         pipeline = SignalForecastPipeline()
-        
+
         if SIGNAL_DATA_DIR.exists():
             first_signal = next(SIGNAL_DATA_DIR.glob("*.xlsx"), None)
             if first_signal:
@@ -383,7 +360,7 @@ def get_signal_pipeline():
                     logger.info(f"✓ Données de signal historiques chargées depuis {first_signal.name}")
                 else:
                     logger.warning(f"⚠ Chargement signal initial échoué: {load_res.get('error')}")
-        
+
         logger.info("✓ Pipeline Signal/Forecast chargé en cache")
         return pipeline, None
     except Exception as e:
@@ -394,7 +371,7 @@ def get_signal_pipeline():
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
-        {"role": "bot", "text": "Bonjour ! Je suis BLUE-Gen, votre assistant intelligent spécialisé en eau. Choisissez un mode ci-dessus et posez-moi votre question.", "time": "maintenant"},
+        {"role": "bot", "text": "Bonjour ! Je suis BLUE-Gen, votre assistant intelligent spécialisé en eau. Choisissez un mode ci-dessus et posez-moi votre question.", "time": "maintenant", "type": "text"},
     ]
 if "mode" not in st.session_state:
     st.session_state.mode = "Texte"
@@ -420,6 +397,10 @@ if "last_image_prompt" not in st.session_state:
     st.session_state.last_image_prompt = None
 if "last_image_tokens" not in st.session_state:
     st.session_state.last_image_tokens = []
+if "pending_prompt" not in st.session_state:
+    st.session_state.pending_prompt = None
+if "pending_mode" not in st.session_state:
+    st.session_state.pending_mode = None
 
 
 def init_rag_pipeline():
@@ -497,10 +478,14 @@ with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🗑️ Effacer la conversation"):
         st.session_state.messages = [
-            {"role": "bot", "text": "Conversation réinitialisée. Comment puis-je vous aider ?", "time": "maintenant"},
+            {"role": "bot", "text": "Conversation réinitialisée. Comment puis-je vous aider ?", "time": "maintenant", "type": "text"},
         ]
         st.session_state.msg_count = 0
         st.session_state.img_count = 0
+        st.session_state.pending_prompt = None
+        st.session_state.pending_mode = None
+        if "user_input" in st.session_state:
+            del st.session_state.user_input
         st.rerun()
 
 # ── MAIN ───────────────────────────────────────────────────────────────────────
@@ -541,41 +526,69 @@ chat_html = '<div class="chat-wrapper">'
 for m in st.session_state.messages:
     role_cls = "user" if m["role"] == "user" else "bot"
     avatar_icon = "👤" if m["role"] == "user" else "💧"
-    
-    # Vérifie si c'est une réponse image (contient le tag spécial)
-    if m["text"].startswith("<img_response>"):
-        # Extrait le HTML de l'image
-        img_html = m["text"].replace("<img_response>", "").replace("</img_response>", "")
-        chat_html += f"""
-    <div class="msg-row {role_cls}">
-      <div class="avatar {role_cls}">{avatar_icon}</div>
-      <div>
-        {img_html}
-        <div class="msg-time">{m["time"]}</div>
-      </div>
-    </div>"""
-    # Vérifie si c'est une réponse signal (contient le tag spécial)
-    elif m["text"].startswith("<signal_response>"):
-        # Extrait le HTML de la prédiction
-        signal_html = m["text"].replace("<signal_response>", "").replace("</signal_response>", "")
-        chat_html += f"""
-    <div class="msg-row {role_cls}">
-      <div class="avatar {role_cls}">{avatar_icon}</div>
-      <div>
-        {signal_html}
-        <div class="msg-time">{m["time"]}</div>
-      </div>
-    </div>"""
+    msg_type = m.get("type", "text")
+
+    if msg_type == "image":
+        data = m.get("html_data", {})
+        img_base64 = data.get("base64", "")
+        prompt = data.get("prompt", "")
+        tokens = data.get("tokens", [])
+        is_placeholder = data.get("is_placeholder", False)
+        source_label = "Image placeholder (diffusers non disponible)" if is_placeholder else "Image générée avec LoRA Fine-tuned"
+        prompt_display = prompt[:80] + ("…" if len(prompt) > 80 else "")
+        tokens_html = ""
+        if tokens:
+            tokens_str = ", ".join(tokens)
+            tokens_html = '<div style="font-size: 0.8rem; color: #666; margin-top: 8px;">Tokens reconnus: ' + tokens_str + '</div>'
+
+        inner_html = (
+            '<div style="border-radius: 14px; padding: 12px; background: #E3F2FD; border: 2px solid #1565C0; max-width: 440px;">'
+            '<div style="font-size: 0.9rem; color: #0A2540; margin-bottom: 8px;">'
+            '<strong>🎨 ' + source_label + '</strong><br>'
+            '<em style="font-size: 0.85rem;">Prompt: ' + prompt_display + '</em>'
+            '</div>'
+            '<img src="data:image/png;base64,' + img_base64 + '" style="width: 100%; max-width: 400px; border-radius: 10px; border: 1px solid #1E88E5; display: block;">'
+            + tokens_html +
+            '</div>'
+        )
+        chat_html += (
+            '<div class="msg-row ' + role_cls + '">'
+            '<div class="avatar ' + role_cls + '">' + avatar_icon + '</div>'
+            '<div>' + inner_html + '<div class="msg-time">' + m["time"] + '</div></div>'
+            '</div>'
+        )
+
+    elif msg_type == "signal":
+        data = m.get("html_data", {})
+        fig_html = data.get("fig_html", "")
+        meta_html = data.get("meta_html", "")
+        inner_html = (
+            '<div style="background:#E3F2FD;border:2px solid #1565C0;border-radius:14px;'
+            'padding:14px;margin:8px 0;">'
+            '<div style="font-size:0.95rem;color:#0A2540;font-weight:bold;margin-bottom:10px;">'
+            '📡 Analyse &amp; Prédiction de Signal'
+            '</div>'
+            + fig_html + meta_html +
+            '</div>'
+        )
+        chat_html += (
+            '<div class="msg-row ' + role_cls + '">'
+            '<div class="avatar ' + role_cls + '">' + avatar_icon + '</div>'
+            '<div>' + inner_html + '<div class="msg-time">' + m["time"] + '</div></div>'
+            '</div>'
+        )
+
     else:
-        # Rendu normal pour le texte
-        chat_html += f"""
-    <div class="msg-row {role_cls}">
-      <div class="avatar {role_cls}">{avatar_icon}</div>
-      <div>
-        <div class="bubble {role_cls}">{m["text"]}</div>
-        <div class="msg-time">{m["time"]}</div>
-      </div>
-    </div>"""
+        chat_html += (
+            '<div class="msg-row ' + role_cls + '">'
+            '<div class="avatar ' + role_cls + '">' + avatar_icon + '</div>'
+            '<div>'
+            '<div class="bubble ' + role_cls + '">' + m["text"] + '</div>'
+            '<div class="msg-time">' + m["time"] + '</div>'
+            '</div>'
+            '</div>'
+        )
+
 chat_html += "</div>"
 st.markdown(chat_html, unsafe_allow_html=True)
 
@@ -605,19 +618,16 @@ def get_timestamp():
 
 def handle_text_mode(query: str):
     """Traite les requêtes en mode Texte (RAG)."""
-    # Le pipeline est déjà initialisé au démarrage via @st.cache_resource
     if st.session_state.rag_pipeline is None:
         error_detail = st.session_state.rag_error or "Erreur d'initialisation inconnue"
         return f"⚠ Pipeline RAG non initialisé.\n\nErreur: {error_detail}"
-    
+
     try:
-        # Récupère les documents pertinents par similarité vectorielle
         retrieved_docs = st.session_state.rag_pipeline.retrieve(query, k=5)
-        
+
         if not retrieved_docs:
             return "⚠ Aucun document pertinent trouvé dans la base. Assurez-vous d'avoir indexé des PDFs."
-        
-        # Génère la réponse avec contexte injecté
+
         result = st.session_state.rag_pipeline.generate_response(query)
         response = f"{result['response']}"
         if result['citations']:
@@ -630,70 +640,58 @@ def handle_text_mode(query: str):
 
 def handle_image_mode(query: str):
     """Traite les requêtes en mode Image (LoRA)."""
-    # Le pipeline est déjà initialisé au démarrage via @st.cache_resource
     if st.session_state.image_pipeline is None:
         error_detail = st.session_state.image_error or "Erreur d'initialisation inconnue"
-        return f"⚠ Pipeline Image/LoRA non initialisé.\n\nErreur: {error_detail}"
+        return {"type": "text", "text": f"⚠ Pipeline Image/LoRA non initialisé.\n\nErreur: {error_detail}"}
 
     try:
         result = st.session_state.image_pipeline.generate_image(query)
 
         if result.get('status') == 'error':
-            return f"✗ Erreur génération d'image: {result.get('error', 'Erreur inconnue')}"
+            return {"type": "text", "text": f"✗ Erreur génération d'image: {result.get('error', 'Erreur inconnue')}"}
 
-        # Récupère les images générées (en base64)
         generated_images = result.get('generated_images', [])
         tokens_used = result.get('tokens_used', [])
 
         if not generated_images:
-            return "⚠ Aucune image générée"
+            return {"type": "text", "text": "⚠ Aucune image générée"}
 
-        # Stocke le base64 en session (pas de fichier disque)
         image_data = generated_images[0]
         img_base64 = image_data.get('base64')
 
         if not img_base64:
-            return "✗ Erreur : données image vides (base64 manquant)"
+            return {"type": "text", "text": "✗ Erreur : données image vides (base64 manquant)"}
 
         st.session_state.last_generated_image = img_base64
         st.session_state.last_image_prompt = query
         st.session_state.last_image_tokens = tokens_used
 
-        # Détecte si c'est une image placeholder (fallback) ou une vraie génération SD
         is_placeholder = image_data.get('format') == 'png' and len(img_base64) < 20000
-        source_label = "Image placeholder (diffusers non disponible)" if is_placeholder else "Image générée avec LoRA Fine-tuned"
 
-        # Construit le HTML avec l'image base64 embarquée
-        html_response = f"""
-<div style="border-radius: 14px; padding: 12px; background: #E3F2FD; border: 2px solid #1565C0; max-width: 440px;">
-    <div style="font-size: 0.9rem; color: #0A2540; margin-bottom: 8px;">
-        <strong>🎨 {source_label}</strong><br>
-        <em style="font-size: 0.85rem;">Prompt: {query[:80]}{'…' if len(query) > 80 else ''}</em>
-    </div>
-    <img src="data:image/png;base64,{img_base64}" style="width: 100%; max-width: 400px; border-radius: 10px; border: 1px solid #1E88E5; display: block;">
-    {f'<div style="font-size: 0.8rem; color: #666; margin-top: 8px;">Tokens reconnus: {", ".join(tokens_used)}</div>' if tokens_used else ''}
-</div>
-"""
-        # Retourne HTML spécial pour affichage
-        return f"<img_response>{html_response}</img_response>"
+        return {
+            "type": "image",
+            "base64": img_base64,
+            "prompt": query,
+            "tokens": tokens_used,
+            "is_placeholder": is_placeholder
+        }
 
     except Exception as e:
         logger.exception(f"Erreur lors de la génération d'image: {e}")
-        return f"✗ Erreur: {str(e)}"
+        return {"type": "text", "text": f"✗ Erreur: {str(e)}"}
+
 
 def parse_signal_request(query: str) -> Dict[str, Any]:
     """Parse une requête utilisateur pour extraire les paramètres de forecasting."""
     query_lower = query.lower()
 
-    # Initialisation
     parsed = {
-        'data_type': None,  # 'ventes', 'production', 'abonnes', 'qualite'
-        'region': None,     # 'centre', 'nord', 'sud', etc.
-        'periods': None,    # nombre de périodes à prédire
-        'time_unit': 'annuelle'  # 'annuelle', 'mensuelle', etc.
+        'data_type': None,
+        'region': None,
+        'periods': None,
+        'time_unit': 'annuelle'
     }
 
-    # Détection du type de données
     if any(term in query_lower for term in ['vente', 'ventes']):
         parsed['data_type'] = 'ventes'
     elif any(term in query_lower for term in ['production', 'productions']):
@@ -703,16 +701,14 @@ def parse_signal_request(query: str) -> Dict[str, Any]:
     elif any(term in query_lower for term in ['qualite', 'qualité']):
         parsed['data_type'] = 'qualite'
 
-    # Détection de la région
     regions = ['centre', 'nord', 'sud', 'est', 'ouest', 'centre-est', 'centre-nord',
                'centre-ouest', 'centre-sud', 'sud-ouest', 'hauts-bassins', 'plateau central', 'sahel']
 
     for region in regions:
         if region in query_lower:
-            parsed['region'] = region.title()  # Capitaliser pour correspondre aux noms de colonnes
+            parsed['region'] = region.title()
             break
 
-    # Détection de la durée
     import re
     duration_match = re.search(r'(\d+)\s*(prochaines?\s*)?(ans?|années?|mois|semaines?|jours?)', query_lower)
     if duration_match:
@@ -736,16 +732,16 @@ def parse_signal_request(query: str) -> Dict[str, Any]:
     return parsed
 
 
-def format_signal_response(query: str, parsed_request: Dict, run_result: Dict) -> str:
+def format_signal_response(query: str, parsed_request: Dict, run_result: Dict):
     """
     Formate la réponse du module Signal avec :
       - courbe historique (données réelles)
       - courbe de projection
       - enveloppe d'incertitude (intervalles de confiance)
-    Tout est intégré dans le chat via un tag <signal_response>.
+    Retourne un dict avec les données HTML préparées.
     """
     if run_result.get('status') != 'success':
-        return f"✗ Erreur prédiction: {run_result.get('error', 'Inconnu')}"
+        return {"type": "text", "text": f"✗ Erreur prédiction: {run_result.get('error', 'Inconnu')}"}
 
     try:
         forecast_info = run_result.get('forecast', {})
@@ -754,36 +750,27 @@ def format_signal_response(query: str, parsed_request: Dict, run_result: Dict) -
         forecast_points = forecast_info.get('forecast', [])
 
         if not forecast_points:
-            return "⚠ Aucune prédiction disponible"
+            return {"type": "text", "text": "⚠ Aucune prédiction disponible"}
 
-        # ── Données historiques (avec labels ou indices) ──────────────────────
         if historical:
-            # Les points historiques ont la forme {"label": "2020", "value": 123.0}
             hist_x_labels = [str(p.get('label', i)) for i, p in enumerate(historical)]
-            hist_x_numeric = list(range(len(hist_x_labels)))
             hist_y = [float(p.get('value', 0)) for p in historical]
         else:
-            hist_x_numeric, hist_x_labels, hist_y = [], [], []
+            hist_x_labels, hist_y = [], []
 
-        # ── Données prévisionnelles ──────────────────────────────────────────
-        # Les forecast_points ont : label, value, lower, upper
-        # On utilise directement le label (ex: "2026") pour rester cohérent avec l'axe X
         fc_x_labels = [str(p.get('label', len(hist_x_labels) + i)) for i, p in enumerate(forecast_points)]
         fc_y = [float(p.get('value', 0)) for p in forecast_points]
         fc_lower = [float(p.get('lower', 0)) for p in forecast_points]
         fc_upper = [float(p.get('upper', 0)) for p in forecast_points]
 
-        # Point de liaison historique → prédiction (évite un saut visuel)
         if hist_x_labels and fc_x_labels:
             link_x = [hist_x_labels[-1], fc_x_labels[0]]
             link_y = [hist_y[-1], fc_y[0]]
         else:
             link_x, link_y = [], []
 
-        # ── Construction du graphique ────────────────────────────────────────
         fig = go.Figure()
 
-        # Enveloppe d'incertitude
         fig.add_trace(go.Scatter(
             x=fc_x_labels + fc_x_labels[::-1],
             y=fc_upper + fc_lower[::-1],
@@ -795,7 +782,6 @@ def format_signal_response(query: str, parsed_request: Dict, run_result: Dict) -
             showlegend=True,
         ))
 
-        # Courbe historique
         if hist_x_labels:
             fig.add_trace(go.Scatter(
                 x=hist_x_labels,
@@ -807,7 +793,6 @@ def format_signal_response(query: str, parsed_request: Dict, run_result: Dict) -
                 hovertemplate='<b>%{x}</b><br>Valeur réelle: %{y:,.2f}<extra></extra>',
             ))
 
-        # Trait de liaison
         if link_x:
             fig.add_trace(go.Scatter(
                 x=link_x,
@@ -818,7 +803,6 @@ def format_signal_response(query: str, parsed_request: Dict, run_result: Dict) -
                 hoverinfo='skip',
             ))
 
-        # Courbe de projection
         fig.add_trace(go.Scatter(
             x=fc_x_labels,
             y=fc_y,
@@ -829,7 +813,6 @@ def format_signal_response(query: str, parsed_request: Dict, run_result: Dict) -
             hovertemplate='<b>%{x}</b><br>Projection: %{y:,.2f}<extra></extra>',
         ))
 
-        # Signal key pour le titre (dernière partie après __)
         signal_key = run_result.get('signal_key', '')
         short_key = signal_key.split('__')[-1] if '__' in signal_key else signal_key
 
@@ -855,8 +838,6 @@ def format_signal_response(query: str, parsed_request: Dict, run_result: Dict) -
             ),
         )
 
-        # Ligne verticale séparant historique / prédiction
-        # Avec un axe catégoriel (labels string), add_vline attend le label string
         if hist_x_labels and fc_x_labels:
             fig.add_vline(
                 x=hist_x_labels[-1],
@@ -874,64 +855,53 @@ def format_signal_response(query: str, parsed_request: Dict, run_result: Dict) -
         )
         fig_html = fig_html.replace('<div id=', '<div style="margin:0;padding:0;" id=')
 
-        # ── Méta-informations ────────────────────────────────────────────────
         trend_icon = {"croissante": "📈", "décroissante": "📉"}.get(
             analysis.get('trend', 'stable'), "➡️"
         )
         confidence_pct = f"{forecast_info.get('confidence_level', 0.95)*100:.0f}%"
 
-        meta_html = f"""
-<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;padding-top:10px;
-            border-top:1px solid #BBDEFB;font-size:0.82rem;color:#4A5568;">
-  <span>🔢 <b>Points historiques :</b> {analysis.get('n_points', len(hist_x_numeric))}</span>
-  <span>{trend_icon} <b>Tendance :</b> {analysis.get('trend', 'stable')}</span>
-  <span>🤖 <b>Modèle :</b> {forecast_info.get('model', 'Auto')}</span>
-  <span>🎯 <b>Confiance :</b> {confidence_pct}</span>
-  <span>⏱ <b>Périodes prévues :</b> {forecast_info.get('periods', len(forecast_points))}</span>
-</div>"""
+        meta_html = (
+            '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;padding-top:10px;'
+            'border-top:1px solid #BBDEFB;font-size:0.82rem;color:#4A5568;">'
+            '<span>🔢 <b>Points historiques :</b> ' + str(analysis.get('n_points', len(hist_x_labels))) + '</span>'
+            '<span>' + trend_icon + ' <b>Tendance :</b> ' + analysis.get('trend', 'stable') + '</span>'
+            '<span>🤖 <b>Modèle :</b> ' + forecast_info.get('model', 'Auto') + '</span>'
+            '<span>🎯 <b>Confiance :</b> ' + confidence_pct + '</span>'
+            '<span>⏱ <b>Périodes prévues :</b> ' + str(forecast_info.get('periods', len(forecast_points))) + '</span>'
+            '</div>'
+        )
 
-        response = f"""<signal_response>
-<div style="background:#E3F2FD;border:2px solid #1565C0;border-radius:14px;
-            padding:14px;margin:8px 0;">
-  <div style="font-size:0.95rem;color:#0A2540;font-weight:bold;margin-bottom:10px;">
-    📡 Analyse &amp; Prédiction de Signal
-  </div>
-  {fig_html}
-  {meta_html}
-</div>
-</signal_response>"""
-        return response
+        return {
+            "type": "signal",
+            "fig_html": fig_html,
+            "meta_html": meta_html
+        }
 
     except Exception as e:
         logger.exception(f"Erreur formatage signal: {e}")
-        return f"✗ Erreur formatage: {str(e)}"
+        return {"type": "text", "text": f"✗ Erreur formatage: {str(e)}"}
 
 
 def handle_signal_mode(query: str):
     """
     Traite les requêtes en mode Signal (Forecast).
-    Utilise find_best_signal() pour sélectionner le signal approprié,
-    puis run() pour obtenir historique + prédiction en une seule étape.
     """
     if st.session_state.signal_pipeline is None:
-        return "⚠ Pipeline Forecast non initialisé."
+        return {"type": "text", "text": "⚠ Pipeline Forecast non initialisé."}
 
     pipeline = st.session_state.signal_pipeline
 
     try:
-        # ── 1. Parsing de la requête ─────────────────────────────────────────
         parsed_request = parse_signal_request(query)
 
-        # ── 2. Chargement du répertoire si nécessaire ────────────────────────
         if not pipeline.available_signals:
             signal_dir = Path("dataset/signaux")
             if not signal_dir.exists():
-                return "⚠ Répertoire 'dataset/signaux' introuvable."
+                return {"type": "text", "text": "⚠ Répertoire 'dataset/signaux' introuvable."}
             ingest = pipeline.ingest_directory(str(signal_dir))
             if ingest.get("status") != "success" or not pipeline.available_signals:
-                return f"⚠ Aucun signal chargé : {ingest.get('error', 'répertoire vide')}"
+                return {"type": "text", "text": f"⚠ Aucun signal chargé : {ingest.get('error', 'répertoire vide')}"}
 
-        # ── 3. Sélection du meilleur signal ──────────────────────────────────
         signal_key = pipeline.find_best_signal(
             data_type=parsed_request.get('data_type'),
             region=parsed_request.get('region'),
@@ -939,19 +909,16 @@ def handle_signal_mode(query: str):
 
         if not signal_key:
             avail = ", ".join(pipeline.available_signals[:5])
-            return (f"⚠ Aucun signal trouvé pour cette requête.\n\n"
-                    f"Signaux disponibles : {avail}…")
+            return {"type": "text", "text": f"⚠ Aucun signal trouvé pour cette requête.\n\nSignaux disponibles : {avail}…"}
 
         logger.info(f"✓ Signal sélectionné : {signal_key}")
 
-        # ── 4. Forecast via run() (historique + prédiction) ──────────────────
         periods = parsed_request.get('periods') or 5
         run_result = pipeline.run(signal_key=signal_key, periods=periods)
 
         if run_result.get('status') != 'success':
-            return f"✗ Erreur run() : {run_result.get('error', 'Inconnu')}"
+            return {"type": "text", "text": f"✗ Erreur run() : {run_result.get('error', 'Inconnu')}"}
 
-        # ── 5. Formatage et retour ────────────────────────────────────────────
         return format_signal_response(
             query=query,
             parsed_request=parsed_request,
@@ -960,28 +927,56 @@ def handle_signal_mode(query: str):
 
     except Exception as e:
         logger.exception(f"Erreur handle_signal_mode: {e}")
-        return f"✗ Erreur: {str(e)}"
+        return {"type": "text", "text": f"✗ Erreur: {str(e)}"}
 
+
+# ── Gestion de l'envoi (2 étapes pour afficher le prompt avant génération) ───
 if send_btn and user_input.strip():
     ts = get_timestamp()
-    st.session_state.messages.append({"role": "user", "text": user_input, "time": ts})
+    st.session_state.messages.append({"role": "user", "text": user_input, "time": ts, "type": "text"})
     st.session_state.msg_count += 1
+    st.session_state.pending_prompt = user_input
+    st.session_state.pending_mode = current_mode
+    if "user_input" in st.session_state:
+        del st.session_state.user_input
+    st.rerun()
+
+# Traitement du prompt en attente
+if st.session_state.get("pending_prompt"):
+    prompt = st.session_state.pending_prompt
+    mode = st.session_state.pending_mode
+    st.session_state.pending_prompt = None
+    st.session_state.pending_mode = None
 
     with st.spinner("🌊 BLUE-Gen analyse votre requête…"):
         time.sleep(0.5)
 
-        # Dispatcher à la bonne fonction selon le mode
-        if current_mode == "Texte":
-            bot_reply = handle_text_mode(user_input)
-        elif current_mode == "Image":
-            bot_reply = handle_image_mode(user_input)
-        elif current_mode == "Signal":
-            bot_reply = handle_signal_mode(user_input)
+        if mode == "Texte":
+            bot_reply = handle_text_mode(prompt)
+        elif mode == "Image":
+            bot_reply = handle_image_mode(prompt)
+        elif mode == "Signal":
+            bot_reply = handle_signal_mode(prompt)
         else:
             bot_reply = "Mode inconnu"
 
-    st.session_state.messages.append({"role": "bot", "text": bot_reply, "time": get_timestamp()})
-    if current_mode == "Image":
+    if isinstance(bot_reply, dict):
+        st.session_state.messages.append({
+            "role": "bot",
+            "type": bot_reply.get("type", "text"),
+            "text": bot_reply.get("text", ""),
+            "html_data": {k: v for k, v in bot_reply.items() if k not in ["type", "text"]},
+            "time": get_timestamp()
+        })
+    else:
+        st.session_state.messages.append({
+            "role": "bot",
+            "type": "text",
+            "text": bot_reply,
+            "time": get_timestamp()
+        })
+
+    if mode == "Image":
         st.session_state.img_count += 1
     st.rerun()
 
