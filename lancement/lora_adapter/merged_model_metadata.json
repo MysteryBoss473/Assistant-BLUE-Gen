@@ -1,0 +1,7 @@
+{
+  "model": "runwayml/stable-diffusion-v1-5",
+  "lora_rank": 8,
+  "lora_alpha": 16,
+  "is_merged": true,
+  "merged_at": "2026-05-05T12:16:01.850773"
+}

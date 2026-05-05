@@ -96,16 +96,6 @@ transformers_cache/
 *.safetensors
 *.ckpt
 
-# Data files (large)
-dataset/
-*.xlsx
-*.csv
-*.json
-!captions.json
-!adapter_config.json
-!metadata.json
-!forecast_output.json
-
 # Logs
 *.log
 logs/
