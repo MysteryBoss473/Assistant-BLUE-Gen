@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  blue-gen:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: blue-gen-app
+    ports:
+      - "8502:8502"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - STREAMLIT_SERVER_PORT=8502
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - CHROMA_DB_URL=${CHROMA_DB_URL:-http://localhost:8000}
+    volumes:
+      - ./dataset:/app/dataset:ro
+      - ./lancement:/app/lancement
+      - blue-gen-cache:/home/appuser/.cache
+    networks:
+      - blue-gen-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8502/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    depends_on:
+      - chroma-db
+    labels:
+      - "com.blue-gen.description=BLUE-Gen Multimodal AI Assistant"
+      - "com.blue-gen.version=1.0.0"
+
+  chroma-db:
+    image: chromadb/chroma:latest
+    container_name: blue-gen-chroma
+    ports:
+      - "8000:8000"
+    environment:
+      - ALLOW_RESET=true
+      - IS_PERSISTENT=true
+    volumes:
+      - chroma-data:/chroma_data
+    networks:
+      - blue-gen-network
+    restart: unless-stopped
+
+volumes:
+  blue-gen-cache:
+    driver: local
+  chroma-data:
+    driver: local
+
+networks:
+  blue-gen-network:
+    driver: bridge
