@@ -222,16 +222,16 @@ def _forecast_prophet(df: pd.DataFrame, periods: int,
     last_year = int(df["annee"].iloc[-1])
     points = []
     for i, row in future_fc.iterrows():
-        year = last_year + (len(points) + 1)
+        year = last_year + len(points) + 1
         points.append({
-            "label": str(year),
+            "label": str(int(year)),
             "value": float(row["yhat"]),
             "lower": float(row["yhat_lower"]),
             "upper": float(row["yhat_upper"]),
         })
 
     return {"status": "success", "model": "Prophet", "forecast": points,
-            "periods": periods, "confidence_level": confidence}
+            "periods": int(periods), "confidence_level": float(confidence)}
 
 
 def _forecast_holtwinters(df: pd.DataFrame, periods: int,
@@ -258,16 +258,18 @@ def _forecast_holtwinters(df: pd.DataFrame, periods: int,
 
     points = []
     for i in range(periods):
+        v = float(fc_mean.iloc[i]) if hasattr(fc_mean, 'iloc') else float(fc_mean[i])
+        marg = float(margin[i])
         year = last_year + i + 1
         points.append({
-            "label": str(year),
-            "value": float(fc_mean[i]),
-            "lower": float(fc_mean[i] - margin[i]),
-            "upper": float(fc_mean[i] + margin[i]),
+            "label": str(int(year)),
+            "value": v,
+            "lower": v - marg,
+            "upper": v + marg,
         })
 
     return {"status": "success", "model": "Holt-Winters", "forecast": points,
-            "periods": periods, "confidence_level": confidence}
+            "periods": int(periods), "confidence_level": float(confidence)}
 
 
 def _forecast_linear(df: pd.DataFrame, periods: int,
@@ -290,14 +292,14 @@ def _forecast_linear(df: pd.DataFrame, periods: int,
         margin = float(z * sigma * np.sqrt(1 + 1 / len(values) + (xi - x.mean()) ** 2 / np.sum((x - x.mean()) ** 2)))
         year = last_year + i + 1
         points.append({
-            "label": str(year),
+            "label": str(int(year)),
             "value": v,
             "lower": v - margin,
             "upper": v + margin,
         })
 
     return {"status": "success", "model": "Régression linéaire", "forecast": points,
-            "periods": periods, "confidence_level": confidence}
+            "periods": int(periods), "confidence_level": float(confidence)}
 
 
 def forecast_signal(df: pd.DataFrame, periods: int = 5,

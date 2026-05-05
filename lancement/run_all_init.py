@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def run_init_script(script_name: str) -> bool:
     """Exécute un script d'initialisation."""
-    script_path = Path(__file__).parent / "lancement" / f"{script_name}_init.py"
+    script_path = Path(__file__).parent / f"{script_name}_init.py"
     
     if not script_path.exists():
         logger.error(f"❌ Script non trouvé: {script_path}")

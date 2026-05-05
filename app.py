@@ -749,6 +749,9 @@ def format_signal_response(query: str, parsed_request: Dict, run_result: Dict):
         analysis = run_result.get('analysis', {})
         forecast_points = forecast_info.get('forecast', [])
 
+        logger.info(f"[DEBUG] forecast_info keys: {forecast_info.keys()}")
+        logger.info(f"[DEBUG] forecast_points type: {type(forecast_points)}, len: {len(forecast_points) if isinstance(forecast_points, list) else 'N/A'}")
+        
         if not forecast_points:
             return {"type": "text", "text": "⚠ Aucune prédiction disponible"}
 
@@ -758,10 +761,17 @@ def format_signal_response(query: str, parsed_request: Dict, run_result: Dict):
         else:
             hist_x_labels, hist_y = [], []
 
+        logger.info(f"[DEBUG] hist_x_labels: {hist_x_labels}")
+        logger.info(f"[DEBUG] Building fc_x_labels...")
         fc_x_labels = [str(p.get('label', len(hist_x_labels) + i)) for i, p in enumerate(forecast_points)]
+        logger.info(f"[DEBUG] fc_x_labels: {fc_x_labels}")
         fc_y = [float(p.get('value', 0)) for p in forecast_points]
         fc_lower = [float(p.get('lower', 0)) for p in forecast_points]
         fc_upper = [float(p.get('upper', 0)) for p in forecast_points]
+
+        logger.info(f"[DEBUG] fc_y created: {fc_y}")
+        logger.info(f"[DEBUG] fc_lower created: {fc_lower}")
+        logger.info(f"[DEBUG] fc_upper created: {fc_upper}")
 
         if hist_x_labels and fc_x_labels:
             link_x = [hist_x_labels[-1], fc_x_labels[0]]
@@ -769,6 +779,7 @@ def format_signal_response(query: str, parsed_request: Dict, run_result: Dict):
         else:
             link_x, link_y = [], []
 
+        logger.info(f"[DEBUG] Creating Plotly figure...")
         fig = go.Figure()
 
         fig.add_trace(go.Scatter(
@@ -777,7 +788,7 @@ def format_signal_response(query: str, parsed_request: Dict, run_result: Dict):
             fill='toself',
             fillcolor='rgba(0, 188, 212, 0.15)',
             line=dict(color='rgba(0,0,0,0)'),
-            name=f"Intervalle de confiance ({forecast_info.get('confidence_level', 0.95)*100:.0f}%)",
+            name=f"Intervalle de confiance ({float(forecast_info.get('confidence_level', 0.95))*100:.0f}%)",
             hoverinfo='skip',
             showlegend=True,
         ))
@@ -861,16 +872,39 @@ def format_signal_response(query: str, parsed_request: Dict, run_result: Dict):
         trend_icon = {"croissante": "📈", "décroissante": "📉"}.get(
             analysis.get('trend', 'stable'), "➡️"
         )
-        confidence_pct = f"{forecast_info.get('confidence_level', 0.95)*100:.0f}%"
+        
+        logger.info(f"[DEBUG] analysis dict: {analysis}")
+        logger.info(f"[DEBUG] forecast_info dict: {forecast_info}")
+        
+        # Ensure all values are properly typed before string concatenation
+        n_points = str(analysis.get('n_points', len(hist_x_labels)))
+        trend_val = str(analysis.get('trend', 'stable'))
+        model_val = str(forecast_info.get('model', 'Auto'))
+        periods_val = str(forecast_info.get('periods', len(forecast_points)))
+        
+        logger.info(f"[DEBUG] n_points: {n_points} (type: {type(n_points)})")
+        logger.info(f"[DEBUG] trend_val: {trend_val} (type: {type(trend_val)})")
+        logger.info(f"[DEBUG] model_val: {model_val} (type: {type(model_val)})")
+        logger.info(f"[DEBUG] periods_val: {periods_val} (type: {type(periods_val)})")
+        
+        # Calculate confidence percentage with explicit float conversion
+        confidence_level = forecast_info.get('confidence_level', 0.95)
+        try:
+            confidence_level = float(confidence_level)
+            confidence_pct = f"{confidence_level*100:.0f}%"
+        except (ValueError, TypeError):
+            confidence_pct = "95%"
+        
+        logger.info(f"[DEBUG] confidence_pct: {confidence_pct} (type: {type(confidence_pct)})")
 
         meta_html = (
             '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;padding-top:10px;'
             'border-top:1px solid #BBDEFB;font-size:0.82rem;color:#4A5568;">'
-            '<span>🔢 <b>Points historiques :</b> ' + str(analysis.get('n_points', len(hist_x_labels))) + '</span>'
-            '<span>' + trend_icon + ' <b>Tendance :</b> ' + analysis.get('trend', 'stable') + '</span>'
-            '<span>🤖 <b>Modèle :</b> ' + forecast_info.get('model', 'Auto') + '</span>'
-            '<span>🎯 <b>Confiance :</b> ' + confidence_pct + '</span>'
-            '<span>⏱ <b>Périodes prévues :</b> ' + str(forecast_info.get('periods', len(forecast_points))) + '</span>'
+            '<span>🔢 <b>Points historiques :</b> ' + n_points + '</span> '
+            '<span>' + str(trend_icon) + ' <b>Tendance :</b> ' + trend_val + '</span> '
+            '<span>🤖 <b>Modèle :</b> ' + model_val + '</span> '
+            '<span>🎯 <b>Confiance :</b> ' + confidence_pct + '</span> '
+            '<span>⏱ <b>Périodes prévues :</b> ' + periods_val + '</span>'
             '</div>'
         )
 
