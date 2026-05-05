@@ -111,3 +111,6 @@ docker-compose.override.yml
 # Project specific
 lancement/forecast_report.json
 .streamlit_secret/
+
+# Ignore nested repository copy
+Assistant-BLUE-Gen/

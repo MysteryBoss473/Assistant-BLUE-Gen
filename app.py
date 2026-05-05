@@ -839,14 +839,17 @@ def format_signal_response(query: str, parsed_request: Dict, run_result: Dict):
         )
 
         if hist_x_labels and fc_x_labels:
-            fig.add_vline(
-                x=hist_x_labels[-1],
-                line_dash="dash",
-                line_color="rgba(21,101,192,0.4)",
-                annotation_text="Présent",
-                annotation_position="top right",
-                annotation_font=dict(size=9, color="#1565C0"),
-            )
+            last_hist_x = hist_x_labels[-1]
+            # Plotly add_vline cannot handle plain string labels in some axis modes.
+            if isinstance(last_hist_x, (int, float)):
+                fig.add_vline(
+                    x=last_hist_x,
+                    line_dash="dash",
+                    line_color="rgba(21,101,192,0.4)",
+                    annotation_text="Présent",
+                    annotation_position="top right",
+                    annotation_font=dict(size=9, color="#1565C0"),
+                )
 
         fig_html = fig.to_html(
             include_plotlyjs='cdn',

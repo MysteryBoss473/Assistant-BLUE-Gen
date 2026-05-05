@@ -9,7 +9,7 @@ numpy>=1.24.0
 
 # ── Frontend & Visualization ───────────────────────────────────────────────
 plotly>=5.14.0  # Interactive charts for signal visualization
-plotly-express>=5.14.0
+
 
 # ── RAG & Text Processing ─────────────────────────────────────────────────
 chromadb>=0.4.0
